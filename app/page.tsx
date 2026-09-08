@@ -1,24 +1,29 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Plus, ArrowUpRight, BriefcaseBusiness, CalendarDays, Check, NotebookPen, ChevronRight, LoaderCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Application, blank, stages } from '@/lib/applications';
+import { readRecords, saveRecord, makeBackup, parseBackup, mergeBackup, STORAGE_KEY } from '@/lib/local-storage';
 
 export default function Page(){
  const [rows,setRows]=useState<Application[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[open,setOpen]=useState(false),[draft,setDraft]=useState<Application>(blank),[saving,setSaving]=useState(false),[formError,setFormError]=useState(''),[notice,setNotice]=useState('');
- async function load(){setLoading(true);setError('');try{const r=await fetch('/api/applications');const data=await r.json() as Application[] & {error?:string};if(!r.ok)throw Error(data.error);setRows(data);}catch(e){setError(e instanceof Error?e.message:'불러오지 못했어요.');}finally{setLoading(false);}}
- useEffect(()=>{load();},[]);
+ const backupInput=useRef<HTMLInputElement>(null);
+ function load(){setLoading(true);setError('');try{setRows(readRecords(localStorage));}catch(e){setError(e instanceof Error?e.message:'브라우저 저장소에 접근하지 못했어요.');}finally{setLoading(false);}}
+ useEffect(()=>{load(); const refresh=(e:StorageEvent)=>{if(e.key===STORAGE_KEY||e.key===null)load();}; window.addEventListener('storage',refresh); return ()=>window.removeEventListener('storage',refresh);},[]);
+ function exportBackup(){try{const text=makeBackup(readRecords(localStorage));const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='applynote-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('백업 파일을 내려받았어요. 안전한 곳에 보관해 주세요.');}catch(e){setNotice(e instanceof Error?e.message:'백업하지 못했어요.');}}
+ async function importBackup(e:React.ChangeEvent<HTMLInputElement>){const file=e.target.files?.[0];e.target.value='';if(!file)return;try{if(file.size>20_000_000)throw Error('20MB 이하의 백업 파일을 선택해 주세요.');const incoming=parseBackup(await file.text());const result=mergeBackup(localStorage,incoming);setRows(result.records);setNotice(`${result.added}개 기록을 가져왔어요. 중복 ${result.skipped}개는 기존 기록을 유지했어요.`);setError('');}catch(e){setNotice(e instanceof Error?e.message:'파일을 가져오지 못했어요. 기존 기록은 유지됩니다.');}}
  function edit(a?:Application){setDraft(a?{...a}:blank());setFormError('');setOpen(true);}
  function field(key:keyof Application,value:string){setDraft(x=>({...x,[key]:value}));}
- async function save(e:React.FormEvent){e.preventDefault();setSaving(true);setFormError('');try{const r=await fetch('/api/applications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});const data=await r.json() as {error?:string};if(!r.ok)throw Error(data.error);setOpen(false);setNotice('지원 기록을 저장했어요.');await load();}catch(e){setFormError(e instanceof Error?e.message:'저장하지 못했어요.');}finally{setSaving(false);}}
+ function save(e:React.FormEvent){e.preventDefault();setSaving(true);setFormError('');try{setRows(saveRecord(localStorage,draft));setOpen(false);setNotice('이 브라우저에 지원 기록을 저장했어요.');}catch(e){setFormError(e instanceof Error?e.message:'저장하지 못했어요.');}finally{setSaving(false);}}
  const active=rows.filter(x=>x.stage!=='종료'&&x.stage!=='오퍼').length;
  const interviews=rows.filter(x=>x.stage==='1차 면접'||x.stage==='2차·최종 면접').length;
  const scheduled=rows.filter(x=>x.nextDate&&x.stage!=='종료'&&x.stage!=='오퍼').sort((a,b)=>a.nextDate.localeCompare(b.nextDate));
  return <div className="app-shell">
-  <header className="topbar"><a href="/" className="brand"><span className="brand-mark"><NotebookPen size={21}/></span>applynote<span className="brand-dot">.</span></a><span className="private-label">나의 커리어 워크스페이스</span><span className="avatar">ME</span></header>
+  <header className="topbar"><a href="./" className="brand"><span className="brand-mark"><NotebookPen size={21}/></span>applynote<span className="brand-dot">.</span></a><span className="private-label">나의 커리어 워크스페이스</span><span className="avatar">ME</span></header>
   <main>
    <div className="heading"><div><div className="eyebrow">MY APPLICATIONS</div><h1>다음 기회를 향한 기록<span>.</span></h1><p>지원한 순간부터 마지막 인터뷰까지, 한곳에서.</p></div><button className="primary" onClick={()=>edit()}><Plus size={19}/>지원 추가</button></div>
+   <div className="backup-bar"><span>이 브라우저에 저장됩니다. 브라우저 데이터를 지우기 전에 백업하세요.</span><div><button className="secondary" onClick={exportBackup}>백업 내보내기</button><button className="secondary" onClick={()=>backupInput.current?.click()}>백업 가져오기</button><input ref={backupInput} type="file" accept=".json,application/json" onChange={importBackup} hidden aria-label="백업 파일 선택"/></div></div>
    <section className="overview" aria-label="지원 현황 요약"><div><span>전체 지원</span><strong>{rows.length}<small>개의 기회</small></strong></div><div><span><i className="dot blue"/>진행 중</span><strong>{active}<small>개</small></strong></div><div><span><i className="dot orange"/>면접 진행</span><strong>{interviews}<small>개</small></strong></div><div><span><i className="dot green"/>받은 오퍼</span><strong>{rows.filter(x=>x.stage==='오퍼').length}<small>개</small></strong></div></section>
    <section className="board-section"><div className="section-title"><h2><BriefcaseBusiness size={19}/>지원 보드</h2><span>카드를 눌러 기록을 확인하고 단계를 변경하세요.</span></div>
    {notice&&<div role="status" className="notice"><Check size={16}/>{notice}<button onClick={()=>setNotice('')} aria-label="알림 닫기">×</button></div>}
