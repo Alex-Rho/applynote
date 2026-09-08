@@ -6,13 +6,16 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
-    "start": "wrangler dev --config dist/server/wrangler.json",
+    "dev": "vite --config vite.pages.config.ts --configLoader native",
+    "build": "vite build --config vite.pages.config.ts --configLoader native",
+    "start": "vite preview --config vite.pages.config.ts --configLoader native",
     "lint": "oxlint",
     "format": "oxfmt",
     "db:generate": "drizzle-kit generate",
-    "db:local": "wrangler d1 migrations apply DB --local --config wrangler.local.json"
+    "db:local": "wrangler d1 migrations apply DB --local --config wrangler.local.json",
+    "dev:pages": "vite --config vite.pages.config.ts --configLoader native",
+    "build:pages": "vite build --config vite.pages.config.ts --configLoader native",
+    "dev:legacy-server": "vinext dev"
   },
   "dependencies": {
     "react": "19.2.6",
